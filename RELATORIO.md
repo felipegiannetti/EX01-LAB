@@ -1,14 +1,19 @@
 # Relatório — Roteiro de Laboratório: Threads em Java
 
-Respostas às perguntas de cada parte do roteiro, aos exercícios de fixação e
-um guia de preparação para perguntas do professor. O código correspondente
-está explicado em detalhe no [README.md](README.md).
+Respostas das perguntas de cada parte do roteiro, dos exercícios de fixação
+e um resumo pra ficar pronto pra qualquer pergunta oral do professor. O
+código tá todo explicado no [README.md](README.md), e a teoria de SO por
+trás de tudo isso (processo, thread, escalonamento, modelos de
+mapeamento, condição de corrida, deadlock) tá no
+[CONCEITOS.md](CONCEITOS.md) — vale ler antes desse relatório se a ideia
+é estudar pra prova, não só resolver o roteiro.
 
-## Revisão conceitual — Processo x Thread
+## Processo x Thread
 
-O SO cria um **processo** para cada programa (no nosso caso, a JVM). Toda
-**thread** que criamos em Java é mapeada para uma thread nativa do SO
-(exceto as Virtual Threads da Parte E, que são gerenciadas pela JVM).
+O SO cria um processo pra cada programa — no nosso caso, a JVM é o
+processo. Toda thread que a gente cria em Java vira uma thread nativa do
+SO por baixo (menos as Virtual Threads da Parte E, que são gerenciadas
+pela própria JVM, não pelo SO).
 
 | Aspecto | Processo | Thread |
 |---|---|---|
@@ -18,294 +23,254 @@ O SO cria um **processo** para cada programa (no nosso caso, a JVM). Toda
 | Isolamento | Falha em um processo não derruba outro | Exceção não tratada pode afetar o processo todo |
 | Escalonamento | Unidade de alocação de recursos | Unidade que a CPU de fato escalona |
 
-**Analogia do guichê de atendimento** (exercício de fixação): o
-**processo** é o prédio da agência — tem um endereço próprio, paredes
-próprias (memória isolada), e se o prédio pegar fogo (crash), só aquela
-agência para. As **threads** são os atendentes dentro do prédio — todos
-compartilham o mesmo espaço, os mesmos arquivos e o mesmo balcão (memória
-compartilhada do processo), conseguem se comunicar rapidamente só falando
-entre si (sem precisar de "correio interno" como fariam dois prédios
-diferentes), mas se um atendente entrar em pânico e causar um incêndio
-dentro do prédio (exceção não tratada / corrupção de estado), ele pode
-prejudicar o atendimento dos outros atendentes daquele mesmo prédio.
-"Contratar" um atendente novo (criar uma thread) é bem mais rápido e barato
-do que abrir uma agência nova (criar um processo).
+Analogia do guichê (exercício de fixação, item 3): o processo é o prédio
+da agência — tem endereço próprio, paredes próprias, e se pegar fogo
+(travar), só aquela agência para. As threads são os atendentes lá dentro:
+todos usam o mesmo espaço, o mesmo balcão, a mesma memória, então
+conseguem se falar direto sem precisar de "correio interno" (isso seria
+IPC entre processos). O problema é que, se um atendente surtar e causar
+um problema sério (uma exceção não tratada), pode acabar prejudicando o
+atendimento dos outros que estão no mesmo prédio. E contratar um
+atendente novo é bem mais rápido e barato do que abrir uma agência do
+zero — por isso threads são "mais leves" que processos.
 
-## Parte A — `extends Thread`
+## Parte A — extends Thread
 
-**Pergunta: o tempo total ficou perto de 1s ou de 5s com 5 atendimentos?
-Por quê?**
+O tempo total ficou perto de **1 segundo** (medi: ~1018ms), não 5s.
 
-Ficou perto de **1s** (medido: ~1018ms). Isso acontece porque o `Main`
-primeiro chama `start()` em todas as 5 threads, **e só depois** chama
-`join()` em cada uma delas, em um segundo laço separado. Como `start()`
-pede ao SO para criar uma thread nova imediatamente, as 5 threads passam a
-existir e a dormir (`Thread.sleep(1000)`) **ao mesmo tempo** — em paralelo.
-O tempo total do programa é então o tempo da thread mais lenta, não a soma
-de todas. Se `start()` e `join()` estivessem no mesmo laço (chamando
-`join()` logo depois de cada `start()`), o programa seria efetivamente
-sequencial — esperaria a thread 1 terminar antes de sequer criar a thread
-2 — e o tempo total seria perto de **5s**.
+O motivo é a ordem do código: eu chamo `start()` nas 5 threads primeiro,
+todas seguidas, num laço. Só depois, num segundo laço separado, chamo
+`join()` em cada uma. Como `start()` já manda o SO criar a thread na hora,
+as 5 threads existem e começam a dormir (`Thread.sleep(1000)`) praticamente
+juntas — em paralelo. Então o tempo final é o da thread mais devagar, não
+a soma das 5.
 
-## Parte B — `implements Runnable`
+Se eu tivesse colocado `join()` logo depois de cada `start()`, dentro do
+mesmo laço, aí sim ia virar sequencial — a thread 1 teria que terminar
+antes de sequer a thread 2 ser criada — e o tempo ia pra perto de 5s. É
+basicamente o erro mais comum de quem tá começando com thread: parece que
+tá tudo paralelo só porque usou `Thread`, mas se você `join()` cedo demais
+a concorrência vira ilusão.
 
-**Pergunta: qual das duas classes (Parte A ou B) você poderia fazer herdar
-de outra classe hoje?**
+## Parte B — implements Runnable
 
-Somente a `AtendimentoRunnable` (Parte B). Como ela apenas *implementa* a
-interface `Runnable`, ela continua livre para *estender* qualquer outra
-classe (Java permite implementar várias interfaces, mas só herdar de uma
-única superclasse). Já `AtendimentoThread` (Parte A) já gastou sua única
-herança disponível estendendo `Thread`, então não pode herdar de mais
-nenhuma outra classe — por exemplo, ela não poderia herdar de
-`Funcionario` ao mesmo tempo.
+Só a `AtendimentoRunnable` (Parte B) dá pra herdar de outra classe hoje.
 
-## Parte C — Muitas threads de Sistema Operacional
+Em Java uma classe só pode dar `extends` numa superclasse só, mas pode
+implementar quantas interfaces quiser. A `AtendimentoThread` da Parte A já
+usou a única herança que ela tinha disponível pra estender `Thread` — ela
+nunca mais vai poder ser, por exemplo, também uma `Funcionario`. Já a
+`AtendimentoRunnable` só implementa `Runnable`, então continua livre pra
+herdar de qualquer classe que precisar no futuro. É essa regra da
+linguagem, e não só "convenção", que sustenta a recomendação de usar
+Runnable em vez de Thread.
 
-**Pergunta: por que criar uma thread de SO é mais caro do que criar um
-objeto comum em Java?**
+## Parte C — muitas threads de SO
 
-Um objeto comum em Java é só memória alocada no heap da própria JVM —
-rápido e barato. Uma thread de SO, por outro lado, exige que o **kernel**
-faça um trabalho bem mais pesado: reservar uma pilha (stack) própria
-(tipicamente 512KB–1MB), criar estruturas internas de controle do
-escalonador do SO (registradores, contexto de execução, prioridade etc.) e
-registrar essa thread na tabela de threads do sistema. Trocar de contexto
-entre threads de SO também tem custo (salvar/restaurar registradores),
-enquanto criar um objeto Java comum não envolve o kernel em nada.
+**Por que criar uma thread de SO é mais caro que criar um objeto comum?**
 
-**Pergunta: o que esse limite sugere sobre usar 1 thread por requisição em
-um servidor web?**
+Um objeto Java normal é só memória no heap da JVM, gerenciada pelo garbage
+collector — rápido, não envolve o sistema operacional em nada. Uma thread
+de SO é outra história: o kernel precisa reservar uma pilha própria pra
+ela (geralmente entre 512KB e 1MB), montar as estruturas de controle do
+escalonador (registradores, prioridade, contexto de execução) e registrar
+ela na tabela de threads do sistema. Trocar de contexto entre threads
+também tem custo — salvar e restaurar tudo isso. Criar objeto Java não
+passa nem perto disso.
 
-Sugere que esse modelo **não escala** para servidores com muitas conexões
-simultâneas. Se cada requisição HTTP criar (ou consumir) uma thread de SO
-dedicada, um servidor sob carga alta (milhares de conexões simultâneas,
-comum em sistemas web modernos) rapidamente esgota a memória disponível
-para pilhas de thread e pode lançar
-`OutOfMemoryError: unable to create new native thread` — derrubando o
-servidor mesmo que a CPU e a memória "de negócio" ainda tivessem folga. É
-exatamente esse problema que motivou a evolução para pools de threads
-(Parte D) e, mais recentemente, Virtual Threads (Parte E), que permitem
-"1 thread por requisição" **sem** o custo de "1 thread de SO por
-requisição".
+**O que isso sugere sobre usar 1 thread por requisição num servidor web?**
 
-## Parte D — `ExecutorService` (pool de threads)
+Que não escala. Se cada requisição HTTP consome uma thread de SO própria,
+um servidor recebendo muita conexão simultânea acaba esgotando a memória
+reservada pra pilhas de thread e pode lançar
+`OutOfMemoryError: unable to create new native thread` — o servidor cai
+mesmo sobrando CPU e memória de verdade pra lógica de negócio. Esse foi
+exatamente o problema que empurrou o Java pra criar pool de threads
+(Parte D) e depois Virtual Threads (Parte E): dá pra ter uma thread por
+requisição sem pagar o preço de uma thread de SO por requisição.
 
-**Pergunta: com 4 threads atendendo 10 clientes, o tempo total ficou perto
-de 1s, 2s ou 3s?**
+## Parte D — ExecutorService
 
-Ficou perto de **3s** (medido: ~3032ms). Com um pool fixo de 4 threads e 10
-tarefas de 1s cada, as tarefas são processadas em levas: a primeira leva
-usa as 4 threads para atender os clientes 1–4 (1s), a segunda leva atende
-5–8 (mais 1s) e a terceira leva atende 9–10 (mais 1s) — totalizando ~3
-"rodadas" de 1s, ou seja, ~3s. Isso é o comportamento esperado de
-`Executors.newFixedThreadPool(4)`: no máximo 4 tarefas rodam ao mesmo
-tempo, as demais ficam enfileiradas até uma thread do pool ficar livre.
+Com pool fixo de 4 threads atendendo 10 clientes, o tempo ficou perto de
+**3 segundos** (medi: ~3032ms).
 
-## Parte E — Virtual Threads (Java 21+)
+Dá pra calcular isso antes de rodar: 10 tarefas de 1s cada, só 4 threads
+disponíveis por vez, então rola em rodadas — clientes 1 a 4 na primeira
+rodada (1s), 5 a 8 na segunda (mais 1s), 9 e 10 na terceira (mais 1s). Três
+rodadas de 1 segundo, ~3s no total. É o comportamento normal de
+`newFixedThreadPool(4)`: só 4 tarefas rodam ao mesmo tempo, o resto fica
+na fila esperando uma thread do pool liberar.
 
-**Pergunta: uma Virtual Thread é uma thread de Sistema Operacional? Se
-não, o que ela é?**
+## Parte E — Virtual Threads
 
-Não. Uma Virtual Thread é um objeto leve **gerenciado pela própria JVM**,
-não pelo kernel do SO. Ela ainda é representada por uma instância de
-`java.lang.Thread` (por isso o código de negócio não muda — continuamos
-usando `Runnable`, `Thread.sleep()` etc.), mas por baixo dos panos a JVM
-mantém um número pequeno de threads de SO reais chamadas **carrier
-threads**, que "emprestam" tempo de execução para as Virtual Threads
-quando elas realmente precisam rodar código. Quando uma Virtual Thread
-bloqueia em uma operação como `Thread.sleep()` ou uma chamada de I/O, a
-JVM desmonta essa Virtual Thread da carrier thread, liberando a carrier
-thread para executar outra Virtual Thread — por isso é possível ter
-centenas de milhares (ou milhões) de Virtual Threads "vivas" ao mesmo
-tempo, mesmo com poucas threads de SO reais no total. Confirmamos isso no
-código executando `Thread.currentThread().isVirtual()`, que retornou
-`true`, e rodando 100.000 tarefas concorrentes (o mesmo volume que
-quebraria o modelo da Parte C) sem `OutOfMemoryError`, em ~1,4s.
+Não, uma Virtual Thread não é uma thread de Sistema Operacional.
+
+Ela continua sendo representada como um `java.lang.Thread` no código (por
+isso `Runnable`, `Thread.sleep()` etc. continuam funcionando igual), mas
+quem gerencia ela de verdade é a JVM, não o kernel. Por trás, existe um
+número pequeno de threads de SO reais — chamadas de carrier threads — que
+emprestam tempo de execução pra Virtual Thread só enquanto ela está
+rodando código de fato. Quando ela bloqueia, por exemplo num
+`Thread.sleep()` ou numa espera de I/O, a JVM desmonta ela da carrier
+thread e libera essa carrier thread pra atender outra Virtual Thread. É
+por isso que dá pra ter centenas de milhares dessas coisas "vivas" ao
+mesmo tempo com pouquíssimas threads de SO por baixo.
+
+Confirmei isso rodando `Thread.currentThread().isVirtual()` no código, que
+deu `true`, e rodando 100 mil tarefas concorrentes — o mesmo volume que
+quebrava o modelo da Parte C — sem nenhum OutOfMemoryError, em ~1,4s.
 
 ## Exercícios de fixação
 
-**1. Trocar o pool fixo por `newCachedThreadPool()` — o comportamento
-muda?**
+**1. Trocar o pool fixo por newCachedThreadPool() — muda o comportamento?**
 
-Sim. Implementado em [`parteD/MainCached.java`](src/parteD/MainCached.java).
-Enquanto `newFixedThreadPool(4)` limita a **no máximo 4** threads
-simultâneas (forçando as 10 tarefas a rodar em ~3 levas, ~3s no total),
-`newCachedThreadPool()` **não tem limite fixo**: ele cria uma thread nova
-para cada tarefa sempre que não há uma thread ociosa disponível para
-reaproveitar, e mantém threads ociosas por até 60 segundos antes de
-descartá-las. Com as 10 tarefas do exercício, isso resultou em até 10
-threads (`pool-1-thread-1` até `pool-1-thread-10`) rodando **todas ao
-mesmo tempo**, e o tempo total caiu para ~1s. A troca mostra na prática o
-trade-off: `newFixedThreadPool` protege o sistema de criar threads demais
-(bom sob carga alta e imprevisível), enquanto `newCachedThreadPool` prioriza
-throughput quando as tarefas são curtas e o volume é controlado — mas sob
-uma rajada muito grande de tarefas, `newCachedThreadPool` pode reproduzir o
-mesmo problema de escala da Parte C, já que continua criando threads de SO
-reais.
+Muda sim. Tá implementado em
+[`parteD/MainCached.java`](src/parteD/MainCached.java). O
+`newFixedThreadPool(4)` trava em no máximo 4 threads simultâneas (por
+isso as 10 tarefas levaram ~3s, em rodadas). Já o `newCachedThreadPool()`
+não tem limite fixo: ele cria uma thread nova pra cada tarefa toda vez que
+não sobra nenhuma ociosa pra reaproveitar, e mantém as threads ociosas por
+até 60 segundos antes de descartar. Com as 10 tarefas do exercício, isso
+criou até 10 threads rodando ao mesmo tempo (`pool-1-thread-1` até
+`pool-1-thread-10`) e o tempo caiu pra ~1s.
 
-**2. Imprimir `Thread.currentThread()` na Parte E — é uma
-`VirtualThread`?**
+Só que tem um porém: isso mostra o trade-off na prática. Fixo protege o
+sistema de criar thread demais, então é melhor quando a carga é
+imprevisível. Cached é mais rápido, mas numa rajada grande de tarefas ele
+pode acabar criando tantas threads quanto a Parte C criou — e voltar a
+correr o mesmo risco de memória.
 
-Sim. A saída observada foi:
+**2. Imprimir Thread.currentThread() na Parte E — é uma VirtualThread?**
+
+É sim. A saída que apareceu foi:
 
 ```
 Thread.currentThread() = VirtualThread[#28]/runnable@ForkJoinPool-1-worker-1
 isVirtual() = true
 ```
 
-O nome da classe (`VirtualThread`) e o retorno `true` de `isVirtual()`
-confirmam que a tarefa está de fato rodando dentro de uma Virtual Thread,
-não de uma thread de SO tradicional (que apareceria como algo do tipo
-`Thread[#N,...]` e retornaria `isVirtual() == false`). O sufixo
-`@ForkJoinPool-1-worker-1` mostra qual **carrier thread** (thread de SO
-real) está emprestando tempo de execução para essa Virtual Thread naquele
-instante.
+O nome da classe já entrega (`VirtualThread`), e o `isVirtual()` retornando
+`true` confirma. Se fosse uma thread de SO comum, apareceria como
+`Thread[#N,...]` e `isVirtual()` daria `false`. A parte
+`@ForkJoinPool-1-worker-1` do nome mostra qual carrier thread (a thread de
+SO de verdade) tava executando essa Virtual Thread naquele momento.
 
-**3. Explicar processo x thread com a analogia do guichê de
-atendimento**
+**3. Explicar processo x thread com a analogia do guichê**
 
-Ver seção "Revisão conceitual" acima.
+Já respondi lá em cima, na seção "Processo x Thread".
 
-**4. Escolher, com justificativa, a abordagem ideal para um servidor com
-milhares de conexões**
+**4. Qual a abordagem ideal para um servidor com milhares de conexões?**
 
-**Virtual Threads** (o modelo da Parte E) é a escolha ideal hoje para esse
-cenário. Um servidor com milhares de conexões simultâneas precisa de
-milhares de "linhas de execução" concorrentes (idealmente uma por
-conexão/requisição, para manter o código simples e sequencial de ler). O
-modelo `extends Thread` / `implements Runnable` "puro" (Partes A e B) não
-escala — replicaria o problema visto na Parte C, arriscando
-`OutOfMemoryError: unable to create new native thread` bem antes de chegar
-a "milhares" de conexões. Um `ExecutorService` com pool fixo (Parte D)
-resolve o problema de estourar a memória, mas troca isso por **filas de
-espera**: com um pool pequeno e milhares de requisições, a maioria delas
-ficaria enfileirada, aumentando a latência percebida pelo cliente. Virtual
-Threads entregam o melhor dos dois mundos: continuamos escrevendo código
-simples (uma Virtual Thread por requisição, estilo "thread por conexão"),
-mas sem o custo de memória de threads de SO, porque a JVM multiplexa um
-número pequeno de carrier threads reais entre centenas de milhares de
-Virtual Threads, aproveitando os momentos em que elas estão bloqueadas
-(esperando I/O, banco de dados, etc.) para dar espaço a outras.
+Virtual Threads (Parte E). Um servidor assim precisa de milhares de linhas
+de execução rodando ao mesmo tempo — o ideal, pra manter o código simples,
+é uma por conexão. O modelo puro de `extends Thread`/`implements Runnable`
+não aguenta, cairia no mesmo problema da Parte C bem antes de chegar em
+"milhares". Um `ExecutorService` com pool fixo resolve o problema de
+memória, mas troca isso por fila de espera — com pool pequeno e milhares
+de requisições, a maioria fica esperando, o que aumenta a latência que o
+usuário sente. Virtual Thread resolve os dois lados: código continua
+simples (uma por requisição), sem o custo de memória de thread de SO,
+porque a JVM reaproveita um número pequeno de carrier threads entre um
+monte de Virtual Threads, aproveitando bem os momentos em que elas estão
+paradas esperando I/O ou banco de dados.
 
-## Diferenciais em relação ao roteiro
+## O que tem a mais além do roteiro
 
-Além das 5 partes e dos 2 exercícios de fixação pedidos, o projeto inclui
-dois extras (pacote [`extra`](src/extra)), documentados em detalhe no
-[README.md](README.md#extras-indo-além-do-roteiro):
+Implementei as 5 partes e os 2 exercícios pedidos, e ainda fiz mais duas
+coisas (pacote [`extra`](src/extra), detalhes no
+[README.md](README.md#extras-indo-além-do-roteiro)):
 
-- **`CicloDeVidaDemo`**: prova em código, com `Thread.getState()` real, o
-  diagrama de estados `NEW → RUNNABLE → TIMED_WAITING → TERMINATED` que o
-  roteiro apresenta só como conceito.
-- **`Comparativo`**: benchmark que roda a mesma carga de trabalho (2.000
-  tarefas) nos 4 modelos de concorrência do roteiro e mede tempo total +
-  pico de threads de SO (via `ThreadMXBean`) de cada um, lado a lado —
-  dados empíricos reais desta máquina, não só a citação do roteiro.
+- `CicloDeVidaDemo`: mostra os estados reais de uma thread usando
+  `Thread.getState()` — NEW, RUNNABLE, TIMED_WAITING, TERMINATED — em vez
+  de deixar isso só no papel/diagrama.
+- `Comparativo`: roda a mesma carga de trabalho (2000 tarefas) nos 4
+  modelos de concorrência do roteiro ao mesmo tempo e mede tempo total e
+  quantas threads de SO cada um usou de pico, usando `ThreadMXBean`. É um
+  jeito de comparar tudo lado a lado em vez de só rodar cada parte
+  separada com número diferente.
 
-A motivação de ambos foi atacar o objetivo 04 do roteiro ("observar na
-prática o custo de criar milhares de threads de SO") de forma mais
-completa e quantitativa do que rodar cada parte isoladamente.
+## Checklist
 
-## Checklist de entrega
-
-- [x] As 5 partes (A a E) compilam e executam sem erro (`javac`, testado
-      com JDK 26).
-- [x] As perguntas de cada parte estão respondidas neste relatório.
-- [x] Ver seção seguinte para se preparar a explicar processo x thread sem
-      consultar o roteiro.
-- [x] Extras opcionais (ciclo de vida ao vivo + benchmark comparativo)
-      implementados e com resultados documentados.
+- [x] As 5 partes compilam e rodam sem erro (testado com JDK 26)
+- [x] Perguntas de cada parte respondidas
+- [x] Consigo explicar processo x thread sem olhar o roteiro
+- [x] Extras implementados e testados
 
 ---
 
-## Guia rápido para perguntas do professor
+## Perguntas rápidas pra prova oral
 
-Perguntas curtas e diretas que costumam ser feitas em cima desse roteiro,
-com a resposta objetiva:
+**Qual a diferença entre processo e thread?**
+Processo tem memória isolada; thread compartilha a memória do processo
+que criou ela. Processo é a unidade que o SO usa pra alocar recursos;
+thread é a unidade que o SO de fato escalona na CPU.
 
-**P: Qual a diferença entre processo e thread?**
-R: Processo tem memória própria e isolada; thread compartilha a memória do
-processo que a criou. Processo é a unidade de alocação de recursos do SO;
-thread é a unidade que o SO efetivamente escalona na CPU.
+**Por que start() e não run()?**
+`start()` manda o SO criar uma thread nova de verdade, e é dentro dela que
+o `run()` roda. Chamar `run()` direto só executa aquilo como um método
+comum, na thread atual, sem criar concorrência nenhuma.
 
-**P: Por que `start()` e não `run()`?**
-R: `start()` pede ao SO para criar uma thread de execução nova e, dentro
-dela, o `run()` é chamado. Chamar `run()` diretamente só executa aquele
-código como um método comum, na thread atual — sem nenhuma concorrência
-nova.
+**Por que Runnable é melhor que extends Thread?**
+Porque separa a tarefa (o que fazer) de quem executa (a thread) — isso não
+gasta a única herança da classe, deixa reaproveitar a mesma tarefa em
+threads diferentes, e funciona com `ExecutorService`, que espera um
+Runnable, não uma subclasse de Thread.
 
-**P: Por que `implements Runnable` é preferível a `extends Thread`?**
-R: Porque separa "o que fazer" (a tarefa) de "quem executa" (a thread),
-evita gastar a única herança disponível da classe, permite reaproveitar a
-mesma tarefa em várias threads e é compatível com `ExecutorService`
-(que espera um `Runnable`/`Callable`, não uma subclasse de `Thread`).
+**Pra que serve join()?**
+Faz quem chamou esperar a outra thread terminar antes de continuar. Sem
+isso o programa pode seguir (ou até encerrar) antes do trabalho da outra
+thread estar pronto.
 
-**P: Para que serve `join()`?**
-R: Faz a thread que chamou `join()` esperar a outra thread terminar antes
-de continuar. Sem isso, o programa principal pode terminar (ou seguir em
-frente) antes que o trabalho da(s) outra(s) thread(s) esteja concluído.
-
-**P: Por que criar muitas threads de SO quebra o programa?**
-R: Cada thread de SO reserva memória de pilha própria (centenas de KB a
-1MB) e estruturas de kernel. Milhares delas somam vários GB de memória
-reservada, até estourar o limite do processo/SO e lançar
+**Por que criar muita thread de SO quebra o programa?**
+Cada uma reserva uma pilha própria (algumas centenas de KB até 1MB) e
+estrutura de kernel. Com milhares delas, isso soma vários GB de memória
+reservada, até estourar o limite e dar
 `OutOfMemoryError: unable to create new native thread`.
 
-**P: O que um `ExecutorService` resolve?**
-R: Evita criar uma thread de SO nova por tarefa. Um número fixo (ou
-controlado) de threads reais é reaproveitado para processar quantas
-tarefas forem submetidas, enfileirando o excedente.
+**O que o ExecutorService resolve?**
+Evita criar thread de SO nova pra cada tarefa. Um número controlado de
+threads reais fica sendo reaproveitado, e o que passar disso fica na fila.
 
-**P: Por que é preciso chamar `shutdown()` num `ExecutorService`?**
-R: Porque, por padrão, o pool fica vivo esperando novas tarefas
-indefinidamente. `shutdown()` avisa que não virão mais tarefas novas (mas
-deixa terminar as que já estão na fila); sem chamar isso, o programa nunca
-encerra sozinho.
+**Por que precisa chamar shutdown() no ExecutorService?**
+Porque o pool fica esperando tarefa nova pra sempre por padrão.
+`shutdown()` avisa que não vai vir mais nada (mas deixa acabar o que já tá
+na fila) — sem isso o programa nunca termina sozinho.
 
-**P: O que é uma Virtual Thread e por que ela resolve o problema da Parte
-C?**
-R: É uma thread leve gerenciada pela JVM (não pelo SO). Muitas Virtual
-Threads compartilham um número pequeno de threads de SO reais (carrier
-threads), que só são "ocupadas" enquanto a Virtual Thread está realmente
-executando código — quando ela bloqueia (ex.: `sleep`, I/O), a carrier
-thread fica livre para outra Virtual Thread. Isso permite centenas de
-milhares de Virtual Threads sem esgotar a memória do processo.
+**O que é Virtual Thread e por que resolve o problema da Parte C?**
+É uma thread leve gerenciada pela JVM, não pelo SO. Várias delas
+compartilham poucas threads de SO reais (carrier threads), que só ficam
+ocupadas enquanto a Virtual Thread está rodando de verdade — quando ela
+bloqueia, a carrier thread libera pra outra. Dá pra ter centenas de
+milhares sem estourar a memória do processo.
 
-**P: Uma Virtual Thread é uma `Thread` de verdade (do ponto de vista da
-API Java)?**
-R: Sim — `Thread.currentThread()` retorna um objeto `Thread` normalmente,
-e o método `isVirtual()` indica se aquela instância é uma Virtual Thread
-ou uma thread de plataforma (SO) tradicional. O código de negócio
-(`Runnable`, `run()`, `Thread.sleep()`) não muda entre os dois modelos.
+**Virtual Thread é uma Thread de verdade, na API do Java?**
+Sim, `Thread.currentThread()` retorna um `Thread` normal, e `isVirtual()`
+diz se é virtual ou de plataforma. O código que você escreve não muda nada
+entre os dois modelos.
 
-**P: Em que ordem evoluiu a concorrência em Java?**
-R: `extends Thread` (Java 1.0) → `implements Runnable` (desde sempre,
-recomendado a partir do Java 5) → `ExecutorService`/pool de threads (Java
-5+) → Virtual Threads (Java 21+, norma atual).
+**Qual a ordem de evolução da concorrência em Java?**
+extends Thread (Java 1.0) → implements Runnable (recomendado desde o Java
+5) → ExecutorService (Java 5+) → Virtual Threads (Java 21+). Cada geração
+resolveu um problema real da anterior: herança única, depois memória,
+depois o limite de thread de SO.
 
-**P: Por que você fez mais do que o roteiro pedia?**
-R: Para provar os conceitos na prática em vez de só descrevê-los. O
-roteiro deixa o ciclo de vida da thread como diagrama conceitual — o
-`CicloDeVidaDemo` mostra os estados reais via `Thread.getState()`. E, em
-vez de rodar cada parte isolada com N diferentes (10 mil na C, 100 mil na
-E), o `Comparativo` roda a mesma carga nos 4 modelos e mede tempo e
-threads de SO lado a lado, o que deixa o trade-off "rápido vs. custoso em
-memória" visível em uma única tabela.
+**Por que você fez mais do que o roteiro pedia?**
+Porque queria provar os conceitos rodando, não só descrever. O
+`CicloDeVidaDemo` mostra o ciclo de vida acontecendo de verdade em vez de
+ficar só no diagrama, e o `Comparativo` deixa visível numa tabela só a
+diferença entre os 4 modelos, em vez de espalhado em experimentos
+separados com números diferentes.
 
-**P: Como o `Comparativo` mede quantas threads de SO cada modelo usa?**
-R: Com `ManagementFactory.getThreadMXBean().getThreadCount()`, que
-retorna a contagem de threads de **plataforma** (SO) vivas na JVM naquele
-instante. É por isso que o cenário de Virtual Threads aparece com um pico
-tão baixo (~14): a API não enxerga as milhares de Virtual Threads, só as
-poucas carrier threads reais por trás delas — o que é, em si, uma prova de
-que Virtual Threads não são threads de SO tradicionais.
+**Como o Comparativo mede quantas threads de SO cada modelo usa?**
+Com `ManagementFactory.getThreadMXBean().getThreadCount()`, que só conta
+threads de plataforma (SO). É por isso que o cenário de Virtual Threads
+aparece com pico baixíssimo (~14) — essa API nem enxerga as Virtual
+Threads, só as carrier threads reais por trás. Isso já mostra sozinho que
+Virtual Thread não é thread de SO.
 
-**P: Por que o `ExecutorService` fixo foi o mais lento no comparativo, se
-ele é a alternativa "profissional" à Parte C?**
-R: Porque ele troca velocidade por controle de recursos: com só 200
-threads para 2.000 tarefas, o excedente fica enfileirado e é processado em
-rodadas (~10 rodadas de 200ms = ~2s). Ele nunca teria o problema de
-memória da Parte C, mas também não vai ser o mais rápido quando o número de
-tarefas simultâneas passa muito do tamanho do pool — é exatamente essa
-limitação que motiva Virtual Threads em cargas muito paralelas e
-bloqueantes (como um servidor web com milhares de conexões).
+**Por que o pool fixo foi o mais lento no comparativo?**
+Porque ele prioriza controle, não velocidade: só 200 threads pra 2000
+tarefas, então o resto espera em fila e roda em rodadas (~2s no total).
+Ele nunca ia estourar memória, mas também não ia ser o mais rápido com
+tanta tarefa de uma vez — e é justamente essa limitação que Virtual
+Thread resolve.

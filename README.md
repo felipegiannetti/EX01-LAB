@@ -1,31 +1,15 @@
-# EX01-LAB — Threads em Java
+## Documentação do projeto
 
-Roteiro de Laboratório da disciplina de Engenharia de Software (PUC Minas) —
-LabDAMD, Unidade 0: Revisão de Sistemas Operacionais e Concorrência.
+São 3 arquivos, cada um com um papel diferente — um complementa o outro:
 
-O exercício usa um cenário propositalmente simples — um **guichê de
-atendimento** que atende clientes — para focar no mecanismo de concorrência
-(como criar e gerenciar threads), e não na lógica de negócio.
-
-O roteiro completo com as respostas às perguntas está em
-[RELATORIO.md](RELATORIO.md). Este README explica o **código**: o que cada
-parte faz e por quê foi escrita daquele jeito.
-
-> **Além do roteiro**: este projeto implementa as 5 partes pedidas (A–E) e
-> os 2 exercícios de fixação, e ainda acrescenta dois extras (fora do
-> escopo mínimo) para aprofundar o entendimento — veja
-> [Extras: indo além do roteiro](#extras-indo-além-do-roteiro).
-
-## Pré-requisitos
-
-- JDK 21 ou superior (o projeto foi testado com JDK 26). Sem isso, a Parte E
-  (Virtual Threads) não compila.
-- Verifique com:
-
-```bash
-java -version
-javac -version
-```
+- **Este README** — explica o código: o que cada parte faz e por quê foi
+  escrita daquele jeito.
+- **[CONCEITOS.md](CONCEITOS.md)** — a teoria de SO e concorrência por
+  trás do código (processo x thread, modelos de mapeamento 1:1/N:1/M:N,
+  escalonamento, condição de corrida, deadlock etc.), pra estudar a
+  matéria em si, sem depender de olhar código nenhum.
+- **[RELATORIO.md](RELATORIO.md)** — as respostas do roteiro e um guia
+  rápido pra prova oral com o professor.
 
 ## Estrutura do projeto
 
